@@ -1,0 +1,14 @@
+# Arquivos de autosave e backup
+*.asv
+*.m~
+*.autosave
+
+# Arquivos compilados e pacotes
+*.mex*
+*.mlappinstall
+*.mltbx
+
+# Cache e pastas geradas pelo Simulink / codegen
+*.slxc
+slprj/
+codegen/
