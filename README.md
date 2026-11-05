@@ -247,21 +247,5 @@ INFLUENCIA DA SWRDFT NA AREA (opcao influenciaFreq, tabela na tela)
   a 55 e 65 Hz, ~0,003 % em 60 Hz, quase zero perto de 58 Hz (onde o erro
   da frequencia estimada passa pelo zero).  Custa uma segunda passada do
   detector por sinal.
-
-POR QUE O ERRO DA FREQUENCIA ESTIMADA NAO E MINIMO EM 60 HZ
------------------------------------------------------------
-  A media de f(i) no registro equivale, matematicamente, a comparar a fase
-  so no COMECO e no FIM do registro.  A oscilacao do vazamento se cancela
-  quase toda, mas os entalhes perturbam a fase nesses trechos e deixam um
-  erro de ~-0,2 mHz perto de 60 Hz; somado ao vazamento, que muda de sinal
-  de um lado para o outro, o erro passa pelo zero perto de 58 Hz.  Testes
-  sem ruido: senoide pura -> erro zero em 60 Hz e "U" perfeito; janela de
-  60 Hz exatos (62,52 kS/s) -> quase nada muda (a causa sao os entalhes,
-  nao a janela de 59,98 Hz); reta ajustada a fase -> -0,007 mHz em 60 Hz,
-  mas pior de 56 a 58 Hz.  Por isso, para mostrar a degradacao da SWRDFT
-  longe de 60 Hz, o grafico da AREA usa, no painel B, o erro RMS da
-  estimativa de frequencia da SWRDFT AMOSTRA A AMOSTRA (porSinal.rmsF, a
-  raiz da media de [f(i) - f real]^2): um "U" limpo, minimo em 60 Hz
-  (~5 mHz), ~290 mHz em 55 Hz.
     desenhar_exemplo.m    -> opcao soExemplo do teste_varrer_parametros
   Se esses arquivos ainda estiverem na sua pasta, podem ser apagados.
