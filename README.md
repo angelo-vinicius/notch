@@ -263,14 +263,5 @@ POR QUE O ERRO DA FREQUENCIA ESTIMADA NAO E MINIMO EM 60 HZ
   estimativa de frequencia da SWRDFT AMOSTRA A AMOSTRA (porSinal.rmsF, a
   raiz da media de [f(i) - f real]^2): um "U" limpo, minimo em 60 Hz
   (~5 mHz), ~290 mHz em 55 Hz.
-
-ENXUGAMENTO (nivel 1): 27 -> 22 arquivos .m
--------------------------------------------
-  Sairam, sem mudar nenhum resultado (conferido: resultados, tabelas e
-  figuras identicos):
-    teste_rodar_sinais.m  -> o teste_varrer_parametros com uma frequencia,
-                             um ruido e mostrarTabelas = true faz o mesmo
-    difang.m, versao_programa.m -> embutidos onde eram usados
-    redesenhar_teste4.m   -> opcao soRedesenhar do teste 4
     desenhar_exemplo.m    -> opcao soExemplo do teste_varrer_parametros
   Se esses arquivos ainda estiverem na sua pasta, podem ser apagados.
