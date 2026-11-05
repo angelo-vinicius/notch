@@ -50,6 +50,18 @@ for k = 1:numel(sementes)
         ev = R.eventos([R.eventos.tInicio] > tCorte);
     end
 
+    % eventos de MODELO REDUZIDO (semeadura sem o banco completo, logo apos o
+    % aquecimento) ficam de fora, junto com os entalhes verdadeiros que eles
+    % cobrem: a propria cadeia os marca como medidas nao confiaveis
+    nRed = 0;
+    if ~isempty(ev) && isfield(ev, 'modeloReduzido') && any([ev.modeloReduzido])
+        red = ev([ev.modeloReduzido]);
+        ev  = ev(~[ev.modeloReduzido]);
+        nRed = numel(red);
+        for kr = 1:nRed
+            tr = tr(~([tr.tInicio] <= red(kr).tFim & [tr.tFim] >= red(kr).tInicio));
+        end
+    end
     P = parear_eventos(ev, tr);
 
     nV  = nV  + P.nVerd;
