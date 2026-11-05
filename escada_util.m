@@ -6,6 +6,7 @@ function out = escada_util(acao, varargin)
 %   v    = escada_util('veredito', S, crit) classifica: OK, ATENCAO, QUEBROU
 %   escada_util('cabecalho', titulo)       imprime o cabecalho da tabela
 %   escada_util('linha', nome, S, v)       imprime uma linha de resultado
+%   q    = escada_util('p90', v)           percentil 90 do erro absoluto
 %
 % Os criterios ficam aqui, num lugar so, para que todos os testes sejam
 % julgados pela mesma regua.  Ajuste-os aqui se quiser.
@@ -49,6 +50,16 @@ switch acao
         fprintf('%-14s | %5d %5d %5d %5d | %3d | %+6.1f %5.1f  %+6.1f %5.1f  %+6.1f %5.1f | %s\n', ...
                 nome, S.nVerd, S.nDet, S.nFalsos, S.nPerdidos, S.Np, ...
                 S.prof, S.area, S.larg, v);
+
+    case 'p90'
+        % percentil 90 do valor ABSOLUTO de um vetor de erros (NaN se vazio)
+        v = abs(varargin{1}(:));
+        if isempty(v)
+            out = NaN;
+        else
+            v = sort(v);
+            out = v(max(1, ceil(0.9*numel(v))));
+        end
 
     otherwise
         error('escada_util:acao', 'Acao desconhecida: %s', acao);

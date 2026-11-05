@@ -21,6 +21,17 @@ function P = parear_eventos(eventos, truth, tolS)
 %   nVerd, nDet, nPareados, nFalsos, nPerdidos
 %   eProf, eLarg, eArea : vetores de erro percentual, um por par
 %   resumo : mediana e P90 do erro absoluto de cada grandeza
+%   parEvento : para cada evento detectado, o indice do entalhe
+%               verdadeiro com que foi pareado em P.entalhes (0 = falso)
+%   entalhes  : os entalhes verdadeiros considerados (so os de tipo
+%               'entalhe'), na ordem usada por parEvento
+%
+% REGRA DE PAREAMENTO
+%   Para cada entalhe verdadeiro, o evento ainda livre de centro mais
+%   proximo, entre os que se SOBREPOEM a ele no tempo ou cujo centro esta a
+%   menos de tolS.  Cada evento serve a no maximo um entalhe.  Use
+%   parEvento sempre que precisar saber quem ficou com quem (por exemplo,
+%   para avaliar o angulo) -- assim toda a avaliacao usa a mesma regra.
 
 if nargin < 3, tolS = 3e-4; end
 
@@ -28,6 +39,7 @@ ent = truth(strcmp({truth.tipo}, 'entalhe'));
 cv  = 0.5*([ent.tInicio] + [ent.tFim]);
 
 usado = false(1, numel(eventos));
+parEvento = zeros(1, numel(eventos));
 eProf = []; eLarg = []; eArea = [];
 
 for j = 1:numel(ent)
@@ -48,6 +60,7 @@ for j = 1:numel(ent)
     end
     if melhor > 0
         usado(melhor) = true;
+        parEvento(melhor) = j;
         e  = eventos(melhor);
         lg = ent(j).tFim - ent(j).tInicio;
         eProf(end+1) = 100*(e.maxDepth - ent(j).profundidade)/ent(j).profundidade; %#ok<AGROW>
@@ -64,6 +77,8 @@ P.nPareados = sum(usado);
 P.nFalsos   = numel(eventos) - sum(usado);
 P.nPerdidos = numel(ent) - sum(usado);
 P.eProf = eProf;  P.eLarg = eLarg;  P.eArea = eArea;
+P.parEvento = parEvento;
+P.entalhes  = ent;
 
 f = @(v) [mediana(v), p90abs(v)];
 P.resumo = struct('prof', f(eProf), 'larg', f(eLarg), 'area', f(eArea));

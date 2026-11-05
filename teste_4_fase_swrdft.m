@@ -37,9 +37,9 @@
 %
 % ARQUIVOS NECESSARIOS (todos nesta pasta)
 %   gerar_sinal_teste.m, notch_analyze.m, notch_detector.m,
-%   SWRDFT.m, fase_swrdft.m, difang.m, plot_ciclo_fase.m,
+%   SWRDFT.m, fase_swrdft.m, plot_ciclo_fase.m,
 %   descrever_sinal.m, harmonicos_thd.m, sinal_bloco.m, swrdft_bloco.m,
-%   plot_erro_frequencia.m, plot_erro_fase.m
+%   plot_erro_frequencia.m
 %
 % REGISTRO LONGO (secao 4)
 %   A secao 4 simula um registro de minutos.  A duracao fica na variavel
@@ -50,6 +50,63 @@
 %   metodo funciona.  Faixa, passo e criterio ficam no inicio da secao.
 
 clear; close all; clc;
+
+%% ================= 0. SO REDESENHAR (opcional) =================
+soRedesenhar = false;   % <-- ALTERE AQUI: true = NAO calcula nada: refaz as figuras
+                        %     das secoes 4 e 5 a partir do resultado_teste_4.mat
+                        %     gravado na ultima rodada (leva segundos)
+snrsPlotar   = [];      % <-- ALTERE AQUI (so com soRedesenhar): [] = todos os
+                        %     niveis de ruido; ou so alguns, ex.: 55 ou [45 65]
+if soRedesenhar
+    pasta = fileparts(mfilename('fullpath'));
+    arq   = fullfile(pasta, 'resultado_teste_4.mat');
+    if ~exist(arq, 'file')
+        error('Nao encontrei resultado_teste_4.mat: rode o teste 4 uma vez com soRedesenhar = false.');
+    end
+    S = load(arq);
+    pastaFig = fullfile(pasta, 'graficos_teste4');
+    if ~exist(pastaFig, 'dir'), mkdir(pastaFig); end
+    fprintf('Lendo %s\n', arq);
+
+    % so os niveis de ruido pedidos (snrsPlotar vazio = todos)
+    sufixo = '';
+    if ~isempty(snrsPlotar)
+        if isfield(S, 'longo') && ~isempty(S.longo)
+            S.longo = S.longo(ismember([S.longo.snr], snrsPlotar));
+        end
+        if isfield(S, 'V') && ~isempty(S.V) && isfield(S.V, 'snr')
+            S.V = S.V(ismember([S.V.snr], snrsPlotar));
+            sufixo = ['_snr' strjoin(arrayfun(@(v) sprintf('%g', v), [S.V.snr], ...
+                                              'UniformOutput', false), '-')];
+        end
+    end
+
+    % ---------- secao 4: ciclos trigonometricos ----------
+    if isfield(S, 'longo') && ~isempty(S.longo)
+        for k = 1:numel(S.longo)
+            L = S.longo(k);
+            dur = (max(L.tE) - min(L.tE))/60;
+            plot_ciclo_fase(L.tE, L.verdE + L.erroE, L.verdE, ...
+                sprintf('Teste 4 - %.1f min de registro, ruido %g dB', dur, L.snr));
+            print(gcf, fullfile(pastaFig, sprintf('teste4_ciclo_fase_snr%g.png', L.snr)), ...
+                  '-dpng', '-r200');
+            fprintf('  ciclo trigonometrico, %g dB\n', L.snr);
+        end
+    else
+        fprintf('  (secao 4 nao foi rodada no ultimo teste 4: sem ciclos trigonometricos)\n');
+    end
+
+    % ---------- secao 5: varredura ----------
+    if isfield(S, 'V') && ~isempty(S.V)
+        plot_erro_frequencia(S.V);
+        print(gcf, fullfile(pastaFig, ['teste4_erro_frequencia' sufixo '.png']), '-dpng', '-r200');
+        fprintf('  erro da frequencia x frequencia da rede\n');
+    else
+        fprintf('  (secao 5 nao foi rodada no ultimo teste 4: sem graficos da varredura)\n');
+    end
+    fprintf('Figuras gravadas em graficos_teste4/\n');
+    return;
+end
 
 %% ================= 1. SINAL TESTADO =================
 Fs       = 62.5e3;
@@ -107,23 +164,24 @@ for df = desvios
         % verdadeiro NO MESMO INSTANTE (o centro detectado)
         angMedido = mod(rad2deg(F.theta(ic(ok))'), 360);
         angVerd   = mod(360*meta.fReal*tc(ok) + 30, 360);
-        erroAng   = [erroAng, difang(angMedido, angVerd)];   %#ok<AGROW>
+        erroAng   = [erroAng, (mod((angMedido) - (angVerd) + 180, 360) - 180)];   %#ok<AGROW>
 
-        % ERRO DE LOCALIZACAO E ERRO TOTAL: cada entalhe detectado e
-        % associado ao entalhe verdadeiro mais proximo (ate 1,5 ms)
-        ent  = truth(strcmp({truth.tipo}, 'entalhe'));
-        tv   = 0.5*([ent.tInicio] + [ent.tFim]);         % centros verdadeiros
+        % ERRO DE LOCALIZACAO E ERRO TOTAL: cada evento e pareado com um
+        % entalhe verdadeiro pela regra do parear_eventos (sobreposicao no
+        % tempo, ou centros a menos de 0,3 ms; um evento por entalhe)
+        Pp   = parear_eventos(ev(ok), truth);
+        tv   = 0.5*([Pp.entalhes.tInicio] + [Pp.entalhes.tFim]);   % centros verdadeiros
         tcOk = tc(ok);
         for k = 1:numel(tcOk)
-            [dist, j] = min(abs(tv - tcOk(k)));
-            if dist <= 1.5e-3
+            j = Pp.parEvento(k);
+            if j > 0
                 % centro detectado - centro verdadeiro, em amostras
                 deslocAm(end+1) = (tcOk(k) - tv(j))*Fs;            %#ok<AGROW>
                 % angulo medido x angulo verdadeiro NO CENTRO VERDADEIRO
                 angCentro = mod(360*meta.fReal*tv(j) + 30, 360);
-                erroTot(end+1) = difang(angMedido(k), angCentro);  %#ok<AGROW>
+                erroTot(end+1) = (mod((angMedido(k)) - (angCentro) + 180, 360) - 180);  %#ok<AGROW>
             else
-                nSemPar = nSemPar + 1;      % evento sem entalhe verdadeiro perto
+                nSemPar = nSemPar + 1;      % evento falso: fora do angulo
             end
         end
     end
@@ -203,7 +261,8 @@ fprintf('erro total ...... angulo medido no centro DETECTADO menos o angulo\n');
 fprintf('                  verdadeiro no centro VERDADEIRO = erro de leitura da\n');
 fprintf('                  fase (Tabela 2) + erro de localizacao.  E o erro que\n');
 fprintf('                  um usuario veria num sinal real\n');
-fprintf('sem par ......... eventos sem entalhe verdadeiro a ate 1,5 ms\n');
+fprintf('sem par ......... eventos falsos, segundo o parear_eventos; ficam fora\n');
+fprintf('                  das colunas de localizacao e de erro total\n');
 
 % ---------- resumo ----------
 todos = [resultados.erroAng];
@@ -244,6 +303,12 @@ rodarLongo   = true;     % false para pular esta secao
 duracaoLonga = 600;      % [s] 10 minutos -- altere a vontade (ex.: 180)
 desvioLongo  = 0.5;      % [Hz] desvio da rede em relacao a 60 Hz
 blocoS       = 20;       % [s] tamanho de cada bloco
+snrsLongo    = [45 55 65];  % [dB] niveis de ruido do registro longo: um
+                            %      registro completo para cada nivel
+
+% ---------- figuras das secoes 4 e 5: gravadas em PNG ----------
+pastaFig = fullfile(fileparts(mfilename('fullpath')), 'graficos_teste4');
+if ~exist(pastaFig, 'dir'), mkdir(pastaFig); end
 
 % ---------- parametros comuns as secoes 4 e 5 ----------
 p = struct('Vll', Vll, 'fReal', f0 + desvioLongo, 'alphaDeg', alphaDeg, ...
@@ -279,7 +344,12 @@ if rodarLongo
     nTotal  = round(duracaoLonga*Fs);
     nBlocos = ceil(nTotal/B);
     t1      = (0:B-1)'/Fs;
-    sigma   = sqrt(mean(sinal_bloco(t1, p).^2)/10^(snr/10));   % ruido do SNR pedido
+    longo   = struct('snr', {}, 'tE', {}, 'tipoE', {}, 'verdE', {}, 'erroE', {}, ...
+                     'tendencia', {}, 'erroTend', {}, 'fBloco', {});
+
+  for iL = 1:numel(snrsLongo)          % um registro completo por nivel de ruido
+    snrL    = snrsLongo(iL);
+    sigma   = sqrt(mean(sinal_bloco(t1, p).^2)/10^(snrL/10));  % ruido do SNR pedido
 
     est    = struct('Nppc', N, 's1', 0, 's2', 1, 'Yc', 0, 'Ys', 0, 'buf', zeros(N,1), 'n', 0);
     PhPrev = nan(N, 1);
@@ -291,8 +361,8 @@ if rodarLongo
     alpha  = alphaDeg*pi/180;   mu = muDeg*pi/180;
 
     if nBlocos == 1, txtB = 'bloco'; else, txtB = 'blocos'; end
-    fprintf('\nREGISTRO LONGO: %.0f s (%.1f min) em %d %s de %g s, rede em %.2f Hz\n', ...
-            duracaoLonga, duracaoLonga/60, nBlocos, txtB, blocoS, p.fReal);
+    fprintf('\nREGISTRO LONGO: %.0f s (%.1f min) em %d %s de %g s, rede em %.2f Hz, ruido %g dB\n', ...
+            duracaoLonga, duracaoLonga/60, nBlocos, txtB, blocoS, p.fReal, snrL);
 
     % ---------- processamento bloco a bloco ----------
     for k = 1:nBlocos
@@ -339,7 +409,7 @@ if rodarLongo
     % ---------- tabela 3: o erro ao longo do tempo ----------
     nFat = 10;
     bordas = linspace(0, duracaoLonga, nFat + 1);
-    fprintf('\nTABELA 3 - ERRO DO ANGULO AO LONGO DO REGISTRO (%d entalhes)\n', cnt);
+    fprintf('\nTABELA 3 - ERRO DO ANGULO AO LONGO DO REGISTRO, ruido %g dB (%d entalhes)\n', snrL, cnt);
     fprintf('%s\n', linhaSep);
     fprintf('%17s | %9s | %10s | %10s | %9s\n', 'trecho', 'entalhes', ...
             'erro medio', 'desvio-', 'pior');
@@ -367,7 +437,7 @@ if rodarLongo
     % ---------- tabela 4: por tipo de entalhe, inicio x fim ----------
     mIni = tE <  bordas(2);
     mFim = tE >= bordas(end-1);
-    fprintf('\nTABELA 4 - ERRO POR TIPO DE ENTALHE: PRIMEIRO x ULTIMO TRECHO\n');
+    fprintf('\nTABELA 4 - ERRO POR TIPO DE ENTALHE: PRIMEIRO x ULTIMO TRECHO, ruido %g dB\n', snrL);
     fprintf('%s\n', linhaSep);
     fprintf('%14s | %15s | %15s | %12s\n', 'angulo [graus]', 'inicio [graus]', ...
             'fim [graus]', 'diferenca [g]');
@@ -396,13 +466,39 @@ if rodarLongo
 
     try
         plot_ciclo_fase(tE, verdE + erroE, verdE, ...
-            sprintf('Teste 4 - %.1f min com a rede em %.2f Hz', duracaoLonga/60, p.fReal));
+            sprintf('Teste 4 - %.1f min com a rede em %.2f Hz, ruido %g dB', ...
+                    duracaoLonga/60, p.fReal, snrL));
+        print(gcf, fullfile(pastaFig, sprintf('teste4_ciclo_fase_snr%g.png', snrL)), ...
+              '-dpng', '-r200');
     catch err
         fprintf('\n(grafico nao exibido: %s)\n', err.message);
+    end
+
+    longo(iL) = struct('snr', snrL, 'tE', tE, 'tipoE', tipoE, 'verdE', verdE, ...
+                       'erroE', erroE, 'tendencia', pL(1), 'erroTend', epL, 'fBloco', fBloco);
+  end   % niveis de ruido
+
+    % ---------- resumo: os niveis de ruido lado a lado ----------
+    if numel(longo) > 1
+        fprintf('\nRESUMO DO REGISTRO LONGO POR NIVEL DE RUIDO (%.1f min, rede em %.2f Hz)\n', ...
+                duracaoLonga/60, p.fReal);
+        fprintf('%s\n', linhaSep);
+        fprintf('%6s | %9s | %10s | %10s | %9s | %24s\n', 'ruido', 'entalhes', 'erro medio', ...
+                'desvio-', 'pior', 'tendencia');
+        fprintf('%6s | %9s | %10s | %10s | %9s | %24s\n', '[dB]', '', '[graus]', ...
+                'padrao [g]', 'caso [g]', '[graus por segundo]');
+        fprintf('%s\n', linhaSep);
+        for iL = 1:numel(longo)
+            e = longo(iL).erroE;
+            fprintf('%6g | %9d | %+10.3f | %10.3f | %9.2f | %+11.6f +/- %.6f\n', longo(iL).snr, ...
+                    numel(e), mean(e), std(e), max(abs(e)), longo(iL).tendencia, longo(iL).erroTend);
+        end
+        fprintf('%s\n', linhaSep);
     end
 else
     fprintf('\n(secao 4, registro longo, pulada: rodarLongo = false)\n');
     tE = []; tipoE = []; verdE = []; erroE = [];
+    longo = [];
 end
 
 %% ================= 5. ERRO EM FUNCAO DA FREQUENCIA DA REDE =================
@@ -428,27 +524,33 @@ faixaFreq      = [55 65];   % [Hz] frequencias testadas
 passoFreq      = 0.25;      % [Hz]
 duracaoPonto   = 0.5;       % [s] registro em cada frequencia
 limiteErro     = 2;         % [graus] pior erro absoluto aceitavel
+snrsVarredura  = [45 55 65];  % [dB] niveis de ruido da varredura: uma
+                              %      varredura completa para cada nivel
 
 if rodarVarredura
 
     freqs = faixaFreq(1):passoFreq:faixaFreq(2);
     nF = numel(freqs);
     z  = zeros(1, nF);
+    Vs = [];
+
+  for iS = 1:numel(snrsVarredura)      % uma varredura completa por nivel de ruido
+    snrV = snrsVarredura(iS);
     V  = struct('freq', freqs, 'n', z, 'eMed', z, 'e05', z, 'e95', z, ...
                 'eMin', z, 'eMax', z, 'eRms', z, 'fErr', z, 'fOsc', z, 'fRms', z);
     nP = round(duracaoPonto*Fs);
     tp = (0:nP-1)'/Fs;
     alpha = alphaDeg*pi/180;   mu = muDeg*pi/180;
 
-    fprintf('\nVARREDURA DE FREQUENCIA: %g a %g Hz, passo de %g Hz, %g s por ponto\n', ...
-            faixaFreq(1), faixaFreq(2), passoFreq, duracaoPonto);
+    fprintf('\nVARREDURA DE FREQUENCIA: %g a %g Hz, passo de %g Hz, %g s por ponto, ruido %g dB\n', ...
+            faixaFreq(1), faixaFreq(2), passoFreq, duracaoPonto, snrV);
 
     for q = 1:nF
         pq = p;  pq.fReal = freqs(q);
         wq = 2*pi*pq.fReal;
 
         xq = sinal_bloco(tp, pq);
-        sg = sqrt(mean(xq.^2)/10^(snr/10));
+        sg = sqrt(mean(xq.^2)/10^(snrV/10));
         try, rng(2000 + q); catch, randn('seed', 2000 + q); end   %#ok<RAND>
         xq = xq + sg*randn(nP, 1);
 
@@ -503,7 +605,7 @@ if rodarVarredura
 
     % ---------- tabela 5 ----------
     sep5 = repmat('-', 1, 83);
-    fprintf('\nTABELA 5 - ERRO EM FUNCAO DA FREQUENCIA DA REDE (a cada 1 Hz)\n');
+    fprintf('\nTABELA 5 - ERRO EM FUNCAO DA FREQUENCIA DA REDE (a cada 1 Hz), ruido %g dB\n', snrV);
     fprintf('%s\n', sep5);
     fprintf('%7s | %5s | %9s | %17s | %7s | %11s | %10s\n', 'rede', 'ent.', ...
             'erro', '90 % dos entalhes', 'pior', 'erro medio', 'erro RMS');
@@ -520,7 +622,7 @@ if rodarVarredura
     fprintf('%s\n', sep5);
     fprintf('* pior caso fora do limite de %g graus\n', limiteErro);
 
-    fprintf('\nRESUMO DA VARREDURA\n');
+    fprintf('\nRESUMO DA VARREDURA, ruido %g dB\n', snrV);
     if isempty(faixaOk)
         fprintf('  nenhuma frequencia com pior caso dentro de %g graus\n', limiteErro);
     else
@@ -548,18 +650,39 @@ if rodarVarredura
     fprintf('  ciclo real.  Uma janela que se ajustasse a frequencia estimada\n');
     fprintf('  ampliaria a faixa.\n');
 
+    V.snr = snrV;  V.faixaOk = faixaOk;
+    if isempty(Vs), Vs = V; else, Vs(iS) = V; end
+  end   % niveis de ruido
+
+    % ---------- resumo: a faixa em que funciona, por nivel de ruido ----------
+    if numel(Vs) > 1
+        fprintf('\nRESUMO DA VARREDURA POR NIVEL DE RUIDO (pior caso <= %g graus)\n', limiteErro);
+        for iS = 1:numel(Vs)
+            if isempty(Vs(iS).faixaOk)
+                fprintf('  %g dB: nenhuma frequencia dentro do limite\n', Vs(iS).snr);
+            else
+                fprintf('  %g dB: funciona de %.2f a %.2f Hz | angulo RMS de %.2f a %.2f graus | freq. RMS de %.4f a %.4f Hz\n', ...
+                        Vs(iS).snr, Vs(iS).faixaOk(1), Vs(iS).faixaOk(2), min(Vs(iS).eRms), ...
+                        max(Vs(iS).eRms), min(Vs(iS).fRms), max(Vs(iS).fRms));
+            end
+        end
+    end
+
     try
-        plot_erro_frequencia(V);         % erro RMS da frequencia [%]
-        plot_erro_fase(V);               % erro RMS do angulo dos entalhes
+        plot_erro_frequencia(Vs);        % erro RMS da frequencia [%], uma curva por ruido
+        print(gcf, fullfile(pastaFig, 'teste4_erro_frequencia.png'), '-dpng', '-r200');
     catch err
         fprintf('\n(grafico nao exibido: %s)\n', err.message);
     end
+    V = Vs;  faixaOk = {Vs.faixaOk};
 else
     fprintf('\n(secao 5, varredura de frequencia, pulada: rodarVarredura = false)\n');
-    V = [];  faixaOk = [];
+    V = [];  faixaOk = [];  Vs = [];
 end
 
 pasta = fileparts(mfilename('fullpath'));
 save(fullfile(pasta, 'resultado_teste_4.mat'), 'resultados', 'sinal', 'sementes', ...
-     'desvios', 'tE', 'tipoE', 'verdE', 'erroE', 'V', 'faixaOk', 'limiteErro');
+     'desvios', 'tE', 'tipoE', 'verdE', 'erroE', 'V', 'faixaOk', 'limiteErro', ...
+     'longo', 'snrsLongo', 'snrsVarredura');
+fprintf('Figuras das secoes 4 e 5 em graficos_teste4/\n');
 fprintf('\nResultado gravado em resultado_teste_4.mat\n');

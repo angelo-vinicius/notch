@@ -15,9 +15,9 @@ function [events, flag, xref, epsilon, info] = ...
 % ---------------------------------------------------------------------
 % Percorre o sinal amostra por amostra (processamento causal).  Para cada
 % amostra:
-%   1. preve quanto o sinal DEVERIA variar, se fosse so a fundamental
-%      (limiar epsilon);
-%   2. mede quanto ele REALMENTE variou;
+%   1. compara a amostra com o que a onda deveria fazer e obtem um
+%      desvio (a REGRA DE DECISAO, ver secao propria abaixo);
+%   2. compara esse desvio com um limiar epsilon;
 %   3. se a variacao e plausivel, aceita a amostra: xref(i) = x(i);
 %   4. se nao e, rejeita a amostra e preenche o buraco com a forma de onda
 %      que existiria sem a comutacao.
@@ -110,11 +110,47 @@ function [events, flag, xref, epsilon, info] = ...
 % perfeitamente limpa.  Nenhuma das duas sozinha basta.
 %
 % ---------------------------------------------------------------------
+% REGRA DE DECISAO ('Regra')
+% ---------------------------------------------------------------------
+% 'secante' (padrao)  preve a amostra pela inclinacao da secante entre a
+%     amostra anterior e a de m = Msec amostras antes:
+%         xprev(i) = xref(i-1) + (xref(i-1) - xref(i-1-m))/m
+%     e testa o desvio |x(i) - xprev(i)| (e o equivalente olhando a
+%     amostra seguinte).  A previsao e feita com as proprias amostras da
+%     onda, entao ja contem a fundamental, as harmonicas e a frequencia
+%     real.  O limiar fica so com o ruido da previsao e uma pequena
+%     correcao de curvatura c:
+%         epsilon = Cinov*sp*sigma + Arel*c
+%         sp = sqrt(1 + (1 + 1/m)^2 + 1/m^2)      (1,62 para m = 4)
+%     Por que 4 amostras, e nao 2:  com as duas ultimas amostras a
+%     inclinacao e muito ruidosa (sp = 2,45) e surgem falsos a 40 dB.
+%     Nas 2m+1 amostras apos uma reancoragem forcada, a previsao ainda
+%     veria a reconstrucao antiga; ali vale a regra 'variacao'.  O mesmo
+%     vale DURANTE um evento semeado com modelo reduzido (so a fundamental
+%     ou ressonador unico, logo apos o aquecimento) e nas 2m+1 amostras
+%     seguintes: a secante supoe uma reconstrucao precisa, e com o modelo
+%     reduzido ela nao e -- sem isso, o evento nao terminava e saturava.
+%
+% 'variacao'  a regra anterior: limiar = incremento esperado de uma
+%     senoide PURA (amostras de N/4 e N/2 atras) + Cnoise*sigma; desvios
+%     = saltos brutos entre amostras vizinhas.  Como so modela a
+%     fundamental, nos picos da onda o limiar cai ao piso de ruido; com
+%     ruido baixo (~65 dB) as harmonicas o ultrapassam e surgem eventos
+%     falsos de 1 a 2 amostras (~1 V).  Mantida para comparacao.
+%
+% Validacao (62,5 kS/s):  com 'secante', os testes 1 a 4 dao resultados
+% identicos aos da 'variacao' entre 60 e 40 dB; os falsos com ruido
+% baixo somem (bancada: 8 -> 0 a 65 dB com 4 % de THD; 542 -> 0 com
+% 10 % de THD quase sem ruido).  Custo: abaixo de 40 dB, onde as duas ja
+% falham, a 'secante' perde mais entalhes rasos (35 dB: 102 contra 51).
+%
+% ---------------------------------------------------------------------
 % LIMITACOES CONHECIDAS
 % ---------------------------------------------------------------------
 %   - so reproduz as ordens listadas em 'Ordens'.  Inter-harmonicos e
 %     supraharmonicos reintroduzem erro de modelo;
-%   - a decisao compara a VARIACAO BRUTA entre amostras com o incremento
+%   - com a regra 'variacao', a decisao compara a VARIACAO BRUTA entre
+%     amostras com o incremento
 %     esperado, nao o desvio em relacao ao valor previsto.  Por isso:
 %       * entalhes rasos cujo degrau vai CONTRA a inclinacao da onda podem
 %         ser capturados como uma unica amostra (o degrau e a onda se
@@ -122,8 +158,9 @@ function [events, flag, xref, epsilon, info] = ...
 %       * entalhes de ENTRADA GRADUAL (disparo proximo de zero,
 %         retificador a diodos) nao sao vistos: o evento comeca na borda
 %         abrupta de saida e mede o que vem DEPOIS do entalhe.
-%     A semeadura robusta nao resolve isso; exige trocar a regra de
-%     decisao por um teste de previsao;
+%     A semeadura robusta nao resolve isso.  A regra 'secante' e um teste
+%     de previsao e deve reduzir esses efeitos -- ainda nao verificado
+%     nesses cenarios;
 %   - aquecimento: as primeiras max(N/2, Janela) amostras nao sao
 %     examinadas.
 %
@@ -137,7 +174,8 @@ function [events, flag, xref, epsilon, info] = ...
 % PARES NOME/VALOR OPCIONAIS
 %   'Ordens'       ordens harmonicas modeladas      (padrao [1 5 7 11 13])
 %   'JanelaAjuste' amostras da janela de semeadura  (padrao round(N/2))
-%   'Cnoise'       multiplo de sigma no limiar      (padrao 5)
+%   'Cnoise'       multiplo de sigma no limiar da regra 'variacao'
+%                                                   (padrao 5)
 %   'MaxRun'       reconstrucoes seguidas maximas   (padrao 1 ms)
 %   'MinWidth'     largura minima do evento [s]     (padrao 3e-5)
 %   'MaxWidth'     largura maxima do evento [s]     (padrao 4e-3)
@@ -147,6 +185,11 @@ function [events, flag, xref, epsilon, info] = ...
 %   'FecharLacunas' exclui da janela de semeadura lacunas aceitas mais
 %                  curtas que isto [s], cercadas por marcacoes; 0 =
 %                  desligado                        (padrao 1e-3)
+%   'Regra'        regra de decisao: 'secante' ou 'variacao'
+%                                                   (padrao 'secante')
+%   'Cinov'        margem da regra 'secante', em desvios do ruido da
+%                  previsao                         (padrao 4)
+%   'Msec'         distancia da secante [amostras]  (padrao 4)
 %
 % SAIDAS
 %   events(k): startSample, endSample, startTime, endTime,
@@ -155,17 +198,21 @@ function [events, flag, xref, epsilon, info] = ...
 %              completo, 2 = so fundamental, 1 = ressonador unico)
 %   flag, xref, epsilon
 %   info: sigma, MaxRun, Janela, Ordens, nRejected, nSaturados,
-%         flagFraction, iInicio
+%         flagFraction, iInicio, Regra
 
 %% ---------------- opcoes ----------------
 p = struct('Ordens', [1 5 7 11 13], 'JanelaAjuste', [], 'Cnoise', 5, ...
            'MaxRun', [], 'MinWidth', 3e-5, 'MaxWidth', 4e-3, 'Sigma', [], ...
-           'AjusteRobusto', true, 'FecharLacunas', 1e-3);
+           'AjusteRobusto', true, 'FecharLacunas', 1e-3, ...
+           'Regra', 'secante', 'Cinov', 4, 'Msec', 4);
 for a = 1:2:numel(varargin)
     if ~isfield(p, varargin{a})
         error('notch_detector:badOption', 'Opcao desconhecida: %s', varargin{a});
     end
     p.(varargin{a}) = varargin{a+1};
+end
+if ~any(strcmp(p.Regra, {'secante', 'variacao'}))
+    error('notch_detector:badOption', 'Regra desconhecida: %s', p.Regra);
 end
 
 x = x(:);
@@ -219,13 +266,33 @@ modoSem = zeros(L,1);                 % modo de semeadura no inicio de cada even
 iInicio = max(N2 + 2, W + 1);
 run = 0;
 
+% regra 'secante': previsao pela secante de m amostras
+m  = p.Msec;
+sp = sqrt(1 + (1 + 1/m)^2 + 1/m^2);   % ruido da previsao, em sigmas
+iInicio = max(iInicio, 2*m + 2);       % precisa de 2m+1 amostras para tras
+desdeAncora = inf;                     % amostras desde a ultima reancoragem
+modoAtual = 3;                         % semeadura do evento em andamento (3 = banco)
+
 for i = iInicio:L-1
 
-    d3 = k1*abs(xref(i-N4)) + k2*abs(xref(i-N2));
-    epsilon(i) = Arel*d3 + p.Cnoise*sigma;
-
-    dprev = abs(x(i)   - xref(i-1));
-    dnext = abs(x(i+1) - x(i));
+    % ----- regra de decisao: desvios dprev, dnext e limiar epsilon -----
+    % a secante supoe uma reconstrucao precisa; enquanto o evento em
+    % andamento usa modelo REDUZIDO (logo apos o aquecimento), vale a regra
+    % 'variacao', que tolera a reconstrucao imprecisa
+    if strcmp(p.Regra, 'secante') && desdeAncora > 2*m + 1 && ~(run > 0 && modoAtual < 3)
+        % previsao pela inclinacao da secante; o desvio e a "surpresa"
+        c = abs(xref(i-1) - 2*xref(i-1-m) + xref(i-1-2*m))*(m + 1)/(2*m^2);
+        epsilon(i) = p.Cinov*sp*sigma + Arel*c;
+        dprev = abs(x(i)   - (xref(i-1) + (xref(i-1) - xref(i-1-m))/m));
+        dnext = abs(x(i+1) - (x(i)      + (x(i)      - xref(i-m))/m));
+    else
+        % regra 'variacao' (e, na 'secante', logo apos uma reancoragem):
+        % salto bruto contra o incremento esperado de uma senoide pura
+        d3 = k1*abs(xref(i-N4)) + k2*abs(xref(i-N2));
+        epsilon(i) = Arel*d3 + p.Cnoise*sigma;
+        dprev = abs(x(i)   - xref(i-1));
+        dnext = abs(x(i+1) - x(i));
+    end
 
     nNeighbor = 1;
     if dprev <= epsilon(i), nNeighbor = nNeighbor + 1; end
@@ -270,6 +337,7 @@ for i = iInicio:L-1
                 nSemFund = nSemFund + 1;
                 modoSem(i) = 1;
             end
+            modoAtual = modoSem(i);
 
             yA = zeros(1, H);
             yB = zeros(1, H);
@@ -301,9 +369,18 @@ for i = iInicio:L-1
         xref(i) = sum(yN);
 
         run = run + 1;
+        desdeAncora = desdeAncora + 1;
     else
         xref(i) = x(i);
-        run = 0;
+        if ~isCore || (run > 0 && modoAtual < 3)
+            % reancoragem (aceita sem ser nucleo), ou fim de um evento de
+            % modelo reduzido: as proximas 2m+1 amostras ainda veriam a
+            % reconstrucao imprecisa na previsao da secante
+            desdeAncora = 0;
+        else
+            desdeAncora = desdeAncora + 1;
+        end
+        run = 0;  modoAtual = 3;
     end
 end
 
@@ -365,7 +442,7 @@ info = struct('sigma', sigma, 'MaxRun', p.MaxRun, 'Janela', W, ...
               'Ordens', ordens, 'nRejected', nRej, 'nSaturados', nSat, ...
               'flagFraction', mean(flag), 'iInicio', iInicio, ...
               'semeaduraBanco', nBanco, 'semeaduraFundamental', nSoFund, ...
-              'semeaduraAdjacente', nSemFund);
+              'semeaduraAdjacente', nSemFund, 'Regra', p.Regra);
 end
 
 
